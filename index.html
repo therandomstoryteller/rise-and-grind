@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Rise & Grind">
+  <meta name="theme-color" content="#f2f2f7">
+  <title>Rise and Grind</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div id="app">
+    <div id="pages">
+      <div id="page-dashboard" class="page"></div>
+      <div id="page-workout"   class="page"></div>
+      <div id="page-diet"      class="page"></div>
+      <div id="page-weight"    class="page"></div>
+      <div id="page-checklist" class="page"></div>
+      <div id="page-progress"  class="page"></div>
+      <div id="page-settings"  class="page"></div>
+    </div>
+
+    <nav class="bottom-nav">
+      <button class="nav-btn active" data-page="dashboard">
+        <span class="nav-icon">📊</span>Dashboard
+      </button>
+      <button class="nav-btn" data-page="workout">
+        <span class="nav-icon">🏋️</span>Workout
+      </button>
+      <button class="nav-btn" data-page="diet">
+        <span class="nav-icon">🍽️</span>Diet
+      </button>
+      <button class="nav-btn" data-page="progress">
+        <span class="nav-icon">📈</span>Progress
+      </button>
+      <button class="nav-btn" data-page="settings">
+        <span class="nav-icon">⚙️</span>Settings
+      </button>
+    </nav>
+  </div>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <!-- App modules (order matters) -->
+  <script src="js/db.js"></script>
+  <script src="js/templates.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/gamification.js"></script>
+  <script src="js/adaptive.js"></script>
+  <script src="js/dashboard.js"></script>
+  <script src="js/workout.js"></script>
+  <script src="js/diet.js"></script>
+  <script src="js/weight.js"></script>
+  <script src="js/checklist.js"></script>
+  <script src="js/progress.js"></script>
+  <script src="js/settings.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
