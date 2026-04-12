@@ -1,4 +1,4 @@
-const CACHE_NAME = 'riseandgrind-v11';
+const CACHE_NAME = 'riseandgrind-v15';
 const ASSETS = [
   './index.html',
   './css/styles.css',

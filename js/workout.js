@@ -81,6 +81,14 @@ const WORKOUT = {
         <div class="postsave-panel">
           <div class="postsave-top">
             <div class="postsave-header">✅ Workout Saved!</div>
+            <div class="postsave-cal-row">
+              <div class="postsave-cal-label">Calories burned</div>
+              <div class="postsave-cal-estimated" id="postsave-est-cal"></div>
+            </div>
+            <div class="postsave-cal-override">
+              <input type="number" id="postsave-actual-cal" class="postsave-cal-input" placeholder="Got Apple Watch data? Enter actual kcal" min="1" max="3000" step="1">
+              <button class="postsave-cal-btn" onclick="WORKOUT.applyActualCalories()">✓ Use This</button>
+            </div>
             <div class="postsave-question">Want to log any additional activity?</div>
             <button class="postsave-skip" onclick="WORKOUT.closePostSave()">No, I'm done for today</button>
           </div>
@@ -281,7 +289,7 @@ const WORKOUT = {
       <div id="exercise-list">
         ${exercises.map((ex, i) => this._buildExerciseCard(ex, i, suggestions, existing)).join('')}
       </div>
-      <button class="save-workout-btn" onclick="WORKOUT.saveWorkout('${workoutType}')">💾 Save Workout</button>
+      <button class="save-workout-btn" id="save-workout-btn" onclick="WORKOUT.saveWorkout('${workoutType}')">💾 Save Workout</button>
 
       <!-- Add Activity after weights -->
       <div class="add-activity-inline">
@@ -426,8 +434,33 @@ const WORKOUT = {
 
   // ── Post-save Flow ───────────────────────────────────────────────────────────
 
-  showPostSave() {
+  showPostSave(estimatedCalories) {
+    this._lastSavedCalories = estimatedCalories || 0;
+    const estEl = document.getElementById('postsave-est-cal');
+    if (estEl) estEl.textContent = `~${estimatedCalories || 0} kcal (MET estimate)`;
+    const input = document.getElementById('postsave-actual-cal');
+    if (input) input.value = '';
     document.getElementById('postsave-overlay').style.display = 'flex';
+  },
+
+  async applyActualCalories() {
+    const input = document.getElementById('postsave-actual-cal');
+    const actual = parseInt(input?.value);
+    if (!actual || actual < 1) { APP.toast('Enter a valid calorie number', 'warn'); return; }
+
+    // Update the most recently saved workout record with the actual calories
+    const today = DB.today();
+    const workouts = await DB.getByIndex('workouts', 'date', today);
+    if (workouts.length) {
+      const latest = workouts[workouts.length - 1];
+      latest.estimatedCalories = actual;
+      latest.caloriesSource = 'apple_watch';
+      await DB.put('workouts', latest);
+    }
+    const estEl = document.getElementById('postsave-est-cal');
+    if (estEl) { estEl.textContent = `${actual} kcal ✓ (Apple Watch)`; estEl.style.color = 'var(--green)'; }
+    if (input) input.value = '';
+    APP.toast(`Apple Watch data saved — ${actual} kcal ✓`, 'success');
   },
 
   closePostSave() {
@@ -494,28 +527,67 @@ const WORKOUT = {
 
   startTimer(seconds) {
     if (this.restTimer) clearInterval(this.restTimer);
-    let remaining = seconds;
-    document.getElementById('timer-overlay').style.display = 'flex';
-    document.getElementById('timer-display').textContent = remaining;
-    this.restTimer = setInterval(() => {
-      remaining--;
-      document.getElementById('timer-display').textContent = remaining;
+    if (this._timerVisibilityHandler) {
+      document.removeEventListener('visibilitychange', this._timerVisibilityHandler);
+    }
+
+    // Store the absolute end time — survives backgrounding/throttling
+    this._timerEndTime = Date.now() + seconds * 1000;
+
+    const tick = () => {
+      const remaining = Math.max(0, Math.round((this._timerEndTime - Date.now()) / 1000));
+      const display = document.getElementById('timer-display');
+      if (display) display.textContent = remaining;
       if (remaining <= 0) {
         clearInterval(this.restTimer);
+        this.restTimer = null;
+        document.removeEventListener('visibilitychange', this._timerVisibilityHandler);
         document.getElementById('timer-overlay').style.display = 'none';
         if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
       }
-    }, 1000);
+    };
+
+    document.getElementById('timer-overlay').style.display = 'flex';
+    tick(); // paint immediately
+    this.restTimer = setInterval(tick, 500); // 500ms so it catches up fast after resume
+
+    // When user switches back from Spotify/another app, immediately resync
+    this._timerVisibilityHandler = () => {
+      if (document.visibilityState === 'visible') {
+        tick();
+        // If timer already expired while backgrounded, close it
+        if (Date.now() >= this._timerEndTime) {
+          clearInterval(this.restTimer);
+          this.restTimer = null;
+          document.getElementById('timer-overlay').style.display = 'none';
+          if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', this._timerVisibilityHandler);
   },
 
   stopTimer() {
     if (this.restTimer) clearInterval(this.restTimer);
+    this.restTimer = null;
+    if (this._timerVisibilityHandler) {
+      document.removeEventListener('visibilitychange', this._timerVisibilityHandler);
+      this._timerVisibilityHandler = null;
+    }
     document.getElementById('timer-overlay').style.display = 'none';
   },
 
   // ── Save Weights Workout ─────────────────────────────────────────────────────
 
   async saveWorkout(workoutType) {
+    // Guard against double-tap — disable button immediately
+    const saveBtn = document.getElementById('save-workout-btn');
+    if (saveBtn) {
+      if (saveBtn.disabled) return; // already saving
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+    }
+
     const template = TEMPLATES.workouts[workoutType];
     const today    = DB.today();
     const exCount  = document.querySelectorAll('[id^="ex-card-"]').length;
@@ -539,9 +611,29 @@ const WORKOUT = {
       if (logged.length) exercises.push({ name, muscle, sets: logged });
     }
 
-    if (!exercises.length) { APP.toast('Log some sets first!', 'warn'); return; }
+    if (!exercises.length) {
+      APP.toast('Log some sets first!', 'warn');
+      // Re-enable the button so user can try again
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Save Workout'; }
+      return;
+    }
 
-    await DB.add('workouts', { date: today, type: workoutType, exercises, estimatedCalories: 300 });
+    // Calculate calories burned based on actual workout data
+    // MET-based formula: Calories = MET × weight(kg) × duration(hrs)
+    // Strength training MET ≈ 3.5–5 depending on intensity
+    const userWeight = (window._userSettings?.currentWeight || window._userSettings?.startWeight || 80);
+    const doneSets   = exercises.reduce((sum, ex) => sum + ex.sets.filter(s => s.done).length, 0);
+    const totalSets  = exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
+    // Estimate duration: ~3 min per set (includes rest) for compound, ~2 min for isolation
+    const avgMinPerSet = workoutType === 'cardio' ? 1 : 2.5;
+    const estMinutes   = Math.max(doneSets * avgMinPerSet, 20); // floor at 20 min
+    const estHours     = estMinutes / 60;
+    // MET: Push/Pull/Legs = 4.5, Upper/Lower = 4.0, Full Body = 4.2, default = 4.0
+    const metMap = { push: 4.5, pull: 4.5, legs: 5.0, upper: 4.2, lower: 4.8, fullbody: 4.2 };
+    const met = metMap[workoutType] || 4.0;
+    const estimatedCalories = Math.round(met * userWeight * estHours);
+
+    await DB.add('workouts', { date: today, type: workoutType, exercises, estimatedCalories, durationMinutes: Math.round(estMinutes) });
     await GAMIFICATION.awardXP(GAMIFICATION.xpValues.logWorkout, 'workout', workoutType);
     await this.checkAndSavePRs(exercises);
     await GAMIFICATION.checkBadges();
@@ -551,7 +643,7 @@ const WORKOUT = {
     if (this._draftInterval) { clearInterval(this._draftInterval); this._draftInterval = null; }
 
     // Show post-save prompt
-    this.showPostSave();
+    this.showPostSave(estimatedCalories);
   },
 
   async checkAndSavePRs(exercises) {
