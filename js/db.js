@@ -121,7 +121,7 @@ const DB = {
   },
 
   exportAll: async () => {
-    const stores = ['workouts','activities','meals','weight','checklist','measurements','cholesterol','photos','xp','badges','coachHistory','adaptations','settings'];
+    const stores = ['workouts','activities','meals','weight','measurements','cholesterol','photos','xp','badges','coachHistory','adaptations','settings'];
     const out = {};
     for (const s of stores) out[s] = await DB.getAll(s);
     return JSON.stringify(out, null, 2);
@@ -129,11 +129,19 @@ const DB = {
 
   importAll: async (json) => {
     const data = JSON.parse(json);
-    const stores = ['workouts','activities','meals','weight','checklist','measurements','cholesterol','photos','xp','badges','coachHistory','adaptations','settings'];
+    const stores = ['workouts','activities','meals','weight','measurements','cholesterol','photos','xp','badges','coachHistory','adaptations','settings'];
     for (const s of stores) {
       if (!data[s]) continue;
       await DB.clear(s);
-      for (const rec of data[s]) await DB.put(s, rec);
+      const db = await openDB();
+      await new Promise((resolve, reject) => {
+        const t = db.transaction(s, 'readwrite');
+        const store = t.objectStore(s);
+        // Use raw put to preserve original timestamps exactly
+        data[s].forEach(rec => store.put(rec));
+        t.oncomplete = resolve;
+        t.onerror = () => reject(t.error);
+      });
     }
   }
 };

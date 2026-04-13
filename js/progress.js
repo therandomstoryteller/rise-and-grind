@@ -100,7 +100,7 @@ const PROGRESS = {
     for (let i = 89; i >= 0; i--) {
       const d = new Date(today);
       d.setDate(d.getDate() - i);
-      const str = d.toISOString().split('T')[0];
+      const str = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
       cells.push({ date: str, done: workoutDates.has(str), day: d.getDay() });
     }
 
@@ -239,7 +239,7 @@ const PROGRESS = {
               <div class="badge-icon">${done ? b.icon : '🔒'}</div>
               <div class="badge-name">${b.name}</div>
               <div class="badge-desc">${b.desc}</div>
-              ${earnedBadge ? `<div class="badge-date">${earnedBadge.earnedAt}</div>` : `<div class="badge-xp">+${b.xp} XP</div>`}
+              ${earnedBadge ? `<div class="badge-date">${new Date(earnedBadge.earnedAt + 'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>` : `<div class="badge-xp">+${b.xp} XP</div>`}
             </div>`;
           }).join('')}
         </div>
@@ -330,7 +330,15 @@ const PROGRESS = {
   async logWeight() {
     const val = parseFloat(document.getElementById('bs-weight-input')?.value);
     if (!val || val < 30 || val > 300) { APP.toast('Enter a valid weight', 'warn'); return; }
-    await DB.add('weight', { date: DB.today(), weight: val });
+    const today = DB.today();
+    const existing = await DB.getByIndex('weight', 'date', today);
+    if (existing.length) {
+      await DB.put('weight', { ...existing[0], weight: val, date: today });
+    } else {
+      await DB.add('weight', { weight: val, date: today });
+    }
+    // Keep _userSettings in sync so dashboard updates immediately
+    if (window._userSettings) window._userSettings.currentWeight = val;
     APP.toast('Weight logged ✓', 'success');
     await this.renderBodyStats(document.getElementById('progress-tab-content'));
   },

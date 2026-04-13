@@ -1,6 +1,6 @@
 const APP = {
   currentPage: 'dashboard',
-  pages: ['dashboard', 'workout', 'diet', 'weight', 'checklist', 'progress', 'settings'],
+  pages: ['dashboard', 'workout', 'diet', 'weight', 'progress', 'settings'],
 
   async init() {
     await this.loadUserSettings();
@@ -43,7 +43,6 @@ const APP = {
       case 'workout':    await WORKOUT.render();     break;
       case 'diet':       await DIET.render();        break;
       case 'weight':     await WEIGHT.render();      break;
-      case 'checklist':  await CHECKLIST.render();   break;
       case 'progress':   await PROGRESS.render();    break;
       case 'settings':   await SETTINGS.render();    break;
     }

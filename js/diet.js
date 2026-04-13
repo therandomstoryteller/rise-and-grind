@@ -1,6 +1,7 @@
 const DIET = {
   mediaRecorder: null,
   isRecording: false,
+  _pendingResults: {}, // stores AI results by key to avoid JSON-in-onclick issues
 
   async render() {
     const el = document.getElementById('page-diet');
@@ -37,11 +38,11 @@ const DIET = {
     const today = DB.today();
     const meals  = (await DB.getByIndex('meals', 'date', today)).sort((a,b) => a.ts - b.ts);
     const settings = window._userSettings || {};
-    const calTarget   = settings.calorieTarget  || 2000;
-    const protTarget  = settings.proteinTarget  || 130;
-    const carbTarget  = settings.carbTarget     || 220;
-    const fatTarget   = settings.fatTarget      || 65;
-    const fibreTarget = settings.fibreTarget    || 30;
+    const calTarget   = (settings.calorieTarget  > 0 ? settings.calorieTarget  : null) || 2000;
+    const protTarget  = (settings.proteinTarget  > 0 ? settings.proteinTarget  : null) || 130;
+    const carbTarget  = (settings.carbTarget     > 0 ? settings.carbTarget     : null) || 220;
+    const fatTarget   = (settings.fatTarget      > 0 ? settings.fatTarget      : null) || 65;
+    const fibreTarget = (settings.fibreTarget    > 0 ? settings.fibreTarget    : null) || 30;
 
     const totals = meals.reduce((acc, m) => ({
       cal:   acc.cal   + (m.calories || 0),
@@ -239,9 +240,11 @@ const DIET = {
       </div>
       ${result.mealNote ? `<div class="result-note">💡 ${result.mealNote}</div>` : ''}
       <div class="result-actions">
-        <button class="result-confirm" onclick="DIET.confirmFoodLog(${JSON.stringify(result).replace(/"/g,'&quot;')})">✓ Log This</button>
+        <button class="result-confirm" id="confirm-log-btn">✓ Log This</button>
         <button class="result-close" onclick="document.getElementById('ai-result-panel').style.display='none'">✕ Cancel</button>
       </div>`;
+    this._pendingResults['food'] = result;
+    document.getElementById('confirm-log-btn').onclick = () => this.confirmFoodLog(this._pendingResults['food']);
   },
 
   async confirmFoodLog(result) {
@@ -254,6 +257,7 @@ const DIET = {
       cholesterolRating: result.mealRating?.cholesterol || 'neutral',
       mealNote: result.mealNote || '', source: 'photo'
     });
+    GAMIFICATION.invalidateStreakCache?.();
     await GAMIFICATION.awardXP(GAMIFICATION.xpValues.logMeal, 'meal', 'Meal logged');
     document.getElementById('ai-result-panel').style.display = 'none';
     await this.loadTodayMeals();
@@ -325,15 +329,23 @@ const DIET = {
             <div class="suggestion-desc">${s.description}</div>
             <div class="suggestion-macros">${s.calories}kcal · ${s.protein}g P · ${s.prepTime}</div>
             <div class="chol-badge chol-badge--${s.cholesterolRating || 'neutral'}">${s.cholesterolRating || 'neutral'} cholesterol</div>
-            <button class="log-suggestion-btn" onclick="DIET.logSuggestion(${JSON.stringify(s).replace(/"/g,'&quot;')})">Log This</button>
+            <button class="log-suggestion-btn" data-suggestion-idx="${s.name}">Log This</button>
           </div>`).join('') || '<div>No suggestions available</div>'}
         <button class="result-close" onclick="document.getElementById('ai-result-panel').style.display='none'">✕ Close</button>`;
+      // Wire up suggestion buttons safely without JSON-in-onclick
+      result.suggestions?.forEach(s => {
+        this._pendingResults[s.name] = s;
+      });
+      panel.querySelectorAll('[data-suggestion-idx]').forEach(btn => {
+        btn.onclick = () => this.logSuggestion(this._pendingResults[btn.dataset.suggestionIdx]);
+      });
     } catch (err) { panel.innerHTML = `<div class="ai-error">❌ ${err.message}</div>`; }
   },
 
   async logSuggestion(suggestion) {
     const today = DB.today();
     await DB.add('meals', { date: today, name: suggestion.name, description: suggestion.description, calories: suggestion.calories, protein: suggestion.protein, carbs: suggestion.carbs || 0, fat: suggestion.fat || 0, fibre: suggestion.fibre || 0, cholesterolRating: suggestion.cholesterolRating || 'neutral', source: 'suggestion' });
+    GAMIFICATION.invalidateStreakCache?.();
     await GAMIFICATION.awardXP(GAMIFICATION.xpValues.logMeal, 'meal', suggestion.name);
     document.getElementById('ai-result-panel').style.display = 'none';
     await this.loadTodayMeals();
@@ -353,6 +365,7 @@ const DIET = {
 
   async deleteMeal(id) {
     await DB.del('meals', id);
+    GAMIFICATION.invalidateStreakCache?.();
     await this.loadTodayMeals();
     APP.toast('Meal removed', 'info');
   },

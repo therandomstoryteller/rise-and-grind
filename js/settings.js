@@ -301,6 +301,7 @@ const SETTINGS = {
     reader.onload = async (e) => {
       try {
         await DB.importAll(e.target.result);
+        GAMIFICATION.invalidateStreakCache?.();
         APP.toast('Data imported ✓', 'success');
       } catch { APP.toast('Import failed — invalid file', 'error'); }
     };
@@ -310,8 +311,9 @@ const SETTINGS = {
 
   async clearAllData() {
     if (!confirm('Clear ALL data? This cannot be undone.')) return;
-    const stores = ['workouts','activities','meals','weight','checklist','measurements','cholesterol','photos','xp','badges','coachHistory','adaptations'];
+    const stores = ['workouts','activities','meals','weight','measurements','cholesterol','photos','xp','badges','coachHistory','adaptations'];
     for (const s of stores) await DB.clear(s);
+    GAMIFICATION.invalidateStreakCache?.();
     APP.toast('All data cleared', 'warn');
   },
 

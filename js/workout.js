@@ -8,6 +8,9 @@ const WORKOUT = {
   // ── Main Render ──────────────────────────────────────────────────────────────
 
   async render() {
+    // Clean up any running timer and its listener before re-rendering
+    this.stopTimer();
+
     const el = document.getElementById('page-workout');
     const suggested = await this._getNextInQueue();
     const todaysLogs = await this._getTodaysSessions();
@@ -368,7 +371,7 @@ const WORKOUT = {
           <input type="number" id="act-actual-cal" class="settings-input" placeholder="e.g. 420" value="${existing?.actualCalories || ''}" min="1" max="3000" step="1">
         </div>
 
-        <button class="save-workout-btn" onclick="WORKOUT.saveActivity('${activityType}')">💾 Save Activity</button>
+        <button class="save-workout-btn" id="save-activity-btn" onclick="WORKOUT.saveActivity('${activityType}')">💾 Save Activity</button>
       </div>`;
 
     // Live calorie update
@@ -399,6 +402,12 @@ const WORKOUT = {
   },
 
   async saveActivity(activityType) {
+    const saveBtn = document.getElementById('save-activity-btn');
+    if (saveBtn) {
+      if (saveBtn.disabled) return;
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+    }
     const activity = TEMPLATES.activityTypes[activityType];
     const duration = parseInt(document.getElementById('act-duration')?.value) || activity.defaultDuration;
     const intensity = document.querySelector('.intensity-btn.active')?.dataset?.intensity || 'moderate';
@@ -424,6 +433,7 @@ const WORKOUT = {
     };
 
     await DB.add('activities', record);
+    GAMIFICATION.invalidateStreakCache?.();
     await GAMIFICATION.awardXP(GAMIFICATION.xpValues.logWorkout, 'activity', record.name);
     await GAMIFICATION.checkBadges();
 
@@ -623,7 +633,6 @@ const WORKOUT = {
     // Strength training MET ≈ 3.5–5 depending on intensity
     const userWeight = (window._userSettings?.currentWeight || window._userSettings?.startWeight || 80);
     const doneSets   = exercises.reduce((sum, ex) => sum + ex.sets.filter(s => s.done).length, 0);
-    const totalSets  = exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
     // Estimate duration: ~3 min per set (includes rest) for compound, ~2 min for isolation
     const avgMinPerSet = workoutType === 'cardio' ? 1 : 2.5;
     const estMinutes   = Math.max(doneSets * avgMinPerSet, 20); // floor at 20 min
@@ -634,6 +643,7 @@ const WORKOUT = {
     const estimatedCalories = Math.round(met * userWeight * estHours);
 
     await DB.add('workouts', { date: today, type: workoutType, exercises, estimatedCalories, durationMinutes: Math.round(estMinutes) });
+    GAMIFICATION.invalidateStreakCache?.();
     await GAMIFICATION.awardXP(GAMIFICATION.xpValues.logWorkout, 'workout', workoutType);
     await this.checkAndSavePRs(exercises);
     await GAMIFICATION.checkBadges();
@@ -646,28 +656,45 @@ const WORKOUT = {
     this.showPostSave(estimatedCalories);
   },
 
-  async checkAndSavePRs(exercises) {
+  async _getPRCache() {
+    const raw = await DB.getSetting('pr_cache');
+    if (raw) {
+      try { return JSON.parse(raw); } catch {}
+    }
+    // One-time rebuild for existing users; afterwards reads are cache-only.
     const allWorkouts = await DB.getAll('workouts');
+    const cache = {};
+    for (const workout of allWorkouts) {
+      for (const ex of (workout.exercises || [])) {
+        const best = Math.max(...(ex.sets || []).map(s => s.weight || 0));
+        if (best > (cache[ex.name] || 0)) cache[ex.name] = best;
+      }
+    }
+    await DB.setSetting('pr_cache', JSON.stringify(cache));
+    return cache;
+  },
+
+  async _setPRCache(cache) {
+    await DB.setSetting('pr_cache', JSON.stringify(cache || {}));
+  },
+
+  async checkAndSavePRs(exercises) {
+    const prCache = await this._getPRCache();
     for (const ex of exercises) {
-      const maxWeight = Math.max(...ex.sets.map(s => s.weight||0));
+      const maxWeight = Math.max(...ex.sets.map(s => s.weight || 0));
       if (!maxWeight) continue;
-      const prevBest = allWorkouts.flatMap(w => w.exercises||[]).filter(e => e.name === ex.name).flatMap(e => e.sets||[]).reduce((max,s) => Math.max(max,s.weight||0), 0);
+      const prevBest = prCache[ex.name] || 0;
       if (maxWeight > prevBest) {
+        prCache[ex.name] = maxWeight;
         await GAMIFICATION.awardXP(GAMIFICATION.xpValues.newPR, 'pr', ex.name);
         APP.toast(`🏅 New PR! ${ex.name}: ${maxWeight}kg`, 'success');
       }
     }
+    await this._setPRCache(prCache);
   },
 
   async loadPRs() {
-    const allWorkouts = await DB.getAll('workouts');
-    const PRs = {};
-    for (const workout of allWorkouts) {
-      for (const ex of (workout.exercises||[])) {
-        const best = Math.max(...(ex.sets||[]).map(s => s.weight||0));
-        if (best > (PRs[ex.name]||0)) PRs[ex.name] = best;
-      }
-    }
+    const PRs = await this._getPRCache();
     const el = document.getElementById('pr-section');
     if (!el) return;
     const entries = Object.entries(PRs).sort((a,b) => b[1]-a[1]).slice(0,6);

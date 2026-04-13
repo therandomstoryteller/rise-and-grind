@@ -28,14 +28,13 @@ const ADAPTIVE = {
   // ── Analysis ────────────────────────────────────────────────────────────────
 
   async _analyse() {
-    const [weightTrend, calorieAnalysis, workoutAnalysis, checklistAnalysis, tdee] = await Promise.all([
+    const [weightTrend, calorieAnalysis, workoutAnalysis, tdee] = await Promise.all([
       this.analyseWeightTrend(30),
       this.analyseCalorieAdherence(14),
       this.analyseWorkoutProgress(28),
-      this.analyseChecklistAdherence(14),
       this.recalculateTDEE()
     ]);
-    return { weightTrend, calorieAnalysis, workoutAnalysis, checklistAnalysis, tdee, analysedAt: new Date().toISOString() };
+    return { weightTrend, calorieAnalysis, workoutAnalysis, tdee, analysedAt: new Date().toISOString() };
   },
 
   async analyseWeightTrend(days) {
@@ -148,26 +147,6 @@ const ADAPTIVE = {
     };
   },
 
-  async analyseChecklistAdherence(days) {
-    const from = DB.daysAgo(days);
-    const logs = await DB.getByDateRange('checklist', from, DB.today());
-    const byDate = {};
-    for (const l of logs) {
-      if (!byDate[l.date]) byDate[l.date] = [];
-      byDate[l.date].push(l.itemId);
-    }
-    const allItems = TEMPLATES.checklist.map(c => c.id);
-    const weakItems = {};
-    allItems.forEach(id => { weakItems[id] = 0; });
-    const totalDays = Object.keys(byDate).length || 1;
-    for (const items of Object.values(byDate)) items.forEach(id => { if (weakItems[id] !== undefined) weakItems[id]++; });
-    const sorted = Object.entries(weakItems).sort((a,b) => a[1]-b[1]);
-    return {
-      totalDays,
-      weakestItems: sorted.slice(0,3).map(([id,count]) => ({ id, label: allItems.find(i=>i===id), completionRate: Math.round((count/totalDays)*100) })),
-      avgScore: Math.round(Object.values(weakItems).reduce((s,v)=>s+v,0) / (allItems.length * totalDays) * 100)
-    };
-  },
 
   async recalculateTDEE() {
     const settings = window._userSettings || {};

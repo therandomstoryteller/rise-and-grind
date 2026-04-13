@@ -1,4 +1,6 @@
 const GAMIFICATION = {
+  _streakCache: null,
+  _streakPromise: null,
 
   levels: [
     { level:1,  name:'Beginner',       minXP:0,     color:'#888' },
@@ -27,8 +29,7 @@ const GAMIFICATION = {
     logWorkout:      50,
     hitProtein:      30,
     hitCalories:     20,
-    completeChecklist: 20,
-    checklistItem:   10,
+    logActivity:     15,
     logWeight:       10,
     logMeal:         10,
     logVoice:        15,
@@ -62,7 +63,7 @@ const GAMIFICATION = {
     { id:'cholesterol_imp', name:'Cholesterol Warrior',desc:'Improve LDL cholesterol level',         icon:'💚', xp:300 },
     { id:'photo_progress',  name:'Progress Photo',     desc:'Take your first progress photo',        icon:'📸', xp:50 },
     { id:'voice_log',       name:'Hands-Free Logger',  desc:'Use voice logging for the first time',  icon:'🎤', xp:30 },
-    { id:'checklist_week',  name:'Full Week Clean',    desc:'Complete full checklist 7 days running', icon:'✅', xp:150 },
+    { id:'logged_week',     name:'Full Week Logged',   desc:'Log meals or workouts 7 days in a row',  icon:'✅', xp:150 },
     { id:'xp_1000',         name:'Four Figures',       desc:'Earn 1,000 total XP',                   icon:'⭐', xp:50 },
     { id:'xp_5000',         name:'High Achiever',      desc:'Earn 5,000 total XP',                   icon:'🌟', xp:100 }
   ],
@@ -89,7 +90,6 @@ const GAMIFICATION = {
   async awardXP(amount, source, detail = '') {
     const today = DB.today();
     await DB.add('xp', { amount, source, detail, date: today });
-    await this.checkBadges();
     return amount;
   },
 
@@ -137,37 +137,67 @@ const GAMIFICATION = {
     const settings = window._userSettings;
     if (settings && weights.length > 0) {
       const start = settings.startWeight || 87;
-      const latest = weights.sort((a,b) => b.date.localeCompare(a.date))[0];
-      const lost = start - latest.weight;
+      const latestW = weights.slice().sort((a,b) => b.date.localeCompare(a.date))[0];
+      const lost = start - latestW.weight;
       await check('weight_5kg',    async () => lost >= 5);
       await check('weight_10kg',   async () => lost >= 10);
-      await check('weight_target', async () => latest.weight <= (settings.targetWeight || 73.5));
+      await check('weight_target', async () => latestW.weight <= (settings.targetWeight || 73.5));
     }
 
-    // Streak badges
+    // Streak badges (based on workout+meal streak)
     const streak = await this.getCurrentStreak();
-    await check('streak_3',   async () => streak >= 3);
-    await check('streak_7',   async () => streak >= 7);
-    await check('streak_14',  async () => streak >= 14);
-    await check('streak_30',  async () => streak >= 30);
-    await check('streak_60',  async () => streak >= 60);
-    await check('streak_100', async () => streak >= 100);
+    await check('streak_3',    async () => streak >= 3);
+    await check('streak_7',    async () => streak >= 7);
+    await check('streak_14',   async () => streak >= 14);
+    await check('streak_30',   async () => streak >= 30);
+    await check('streak_60',   async () => streak >= 60);
+    await check('streak_100',  async () => streak >= 100);
+
+    // 7-day logging streak badge
+    await check('logged_week', async () => streak >= 7);
+  },
+
+  invalidateStreakCache() {
+    this._streakCache = null;
+    this._streakPromise = null;
   },
 
   async getCurrentStreak() {
-    const checklists = await DB.getAll('checklist');
-    if (!checklists.length) return 0;
-    const dates = [...new Set(checklists.map(c => c.date))].sort().reverse();
-    let streak = 0;
-    let cursor = new Date();
-    cursor.setHours(0,0,0,0);
-    for (const dateStr of dates) {
-      const d = new Date(dateStr + 'T00:00:00');
-      const diff = Math.round((cursor - d) / 86400000);
-      if (diff <= 1) { streak++; cursor = d; }
-      else break;
+    const now = Date.now();
+    if (this._streakCache && (now - this._streakCache.ts) < 30000) {
+      return this._streakCache.value;
     }
-    return streak;
+    if (this._streakPromise) return this._streakPromise;
+
+    this._streakPromise = (async () => {
+      // Streak = consecutive days with at least one workout OR meal logged
+      const [workouts, meals] = await Promise.all([DB.getAll('workouts'), DB.getAll('meals')]);
+      const activeDates = new Set([
+        ...workouts.map(w => w.date),
+        ...meals.map(m => m.date)
+      ]);
+      if (!activeDates.size) return 0;
+      const dates = [...activeDates].sort().reverse();
+      let streak = 0;
+      let cursor = new Date();
+      cursor.setHours(0, 0, 0, 0);
+      for (const dateStr of dates) {
+        const d = new Date(dateStr + 'T00:00:00');
+        const diff = Math.round((cursor - d) / 86400000);
+        if (diff === 0) { streak++; cursor = d; }
+        else if (diff === 1) { streak++; cursor = d; }
+        else break;
+      }
+      return streak;
+    })();
+
+    try {
+      const value = await this._streakPromise;
+      this._streakCache = { value, ts: now };
+      return value;
+    } finally {
+      this._streakPromise = null;
+    }
   },
 
   async getTodayXP() {

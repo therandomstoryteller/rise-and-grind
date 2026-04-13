@@ -81,7 +81,7 @@ const DASHBOARD = {
         <button class="qa-btn" onclick="APP.navigate('weight'); setTimeout(()=>WEIGHT.showLogModal(),200)">⚖️<span>Log Weight</span></button>
         <button class="qa-btn" onclick="APP.navigate('workout')">🏋️<span>Workout</span></button>
         <button class="qa-btn" onclick="APP.navigate('diet'); setTimeout(()=>DIET.triggerCamera(),200)">📷<span>Snap Food</span></button>
-        <button class="qa-btn" onclick="APP.navigate('checklist')">✅<span>Checklist</span></button>
+        <button class="qa-btn" onclick="APP.navigate('progress')">📈<span>Progress</span></button>
       </div>`;
 
     await this.loadData();

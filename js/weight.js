@@ -149,10 +149,18 @@ const WEIGHT = {
   _checkMilestones(currentWeight) {
     const settings = window._userSettings || {};
     const start = settings.startWeight || 87;
-    const lost = start - currentWeight;
-    if (lost >= 5)  this._celebrate('-5kg Lost! Keep going!', '⬇️');
-    if (lost >= 10) this._celebrate('-10kg! Halfway there!', '🔥');
-    if (currentWeight <= (settings.targetWeight || 73.5)) this._celebrate('TARGET REACHED! 🏆', '🏆');
+    const lost = +(start - currentWeight).toFixed(1);
+    const shown = JSON.parse(sessionStorage.getItem('milestones_shown') || '[]');
+    const celebrate = (key, msg, emoji) => {
+      if (!shown.includes(key)) {
+        this._celebrate(msg, emoji);
+        shown.push(key);
+        sessionStorage.setItem('milestones_shown', JSON.stringify(shown));
+      }
+    };
+    if (lost >= 5)  celebrate('5kg',    '-5kg Lost! Keep going!',   '⬇️');
+    if (lost >= 10) celebrate('10kg',   '-10kg! Halfway there!',    '🔥');
+    if (currentWeight <= (settings.targetWeight || 73.5)) celebrate('target', 'TARGET REACHED! 🏆', '🏆');
   },
 
   _celebrate(msg, emoji) {

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'riseandgrind-v15';
+const CACHE_NAME = 'riseandgrind-v17';
 const ASSETS = [
   './index.html',
   './css/styles.css',
@@ -12,7 +12,6 @@ const ASSETS = [
   './js/workout.js',
   './js/diet.js',
   './js/weight.js',
-  './js/checklist.js',
   './js/progress.js',
   './js/settings.js',
   'https://cdn.jsdelivr.net/npm/chart.js'
