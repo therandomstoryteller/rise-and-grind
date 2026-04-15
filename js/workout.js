@@ -584,7 +584,8 @@ const WORKOUT = {
       document.removeEventListener('visibilitychange', this._timerVisibilityHandler);
       this._timerVisibilityHandler = null;
     }
-    document.getElementById('timer-overlay').style.display = 'none';
+    const overlay = document.getElementById('timer-overlay');
+    if (overlay) overlay.style.display = 'none';
   },
 
   // ── Save Weights Workout ─────────────────────────────────────────────────────
