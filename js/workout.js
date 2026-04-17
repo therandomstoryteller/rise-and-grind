@@ -439,6 +439,8 @@ const WORKOUT = {
 
     const calLabel = caloriesSource === 'actual' ? `${calories} kcal` : `~${calories} kcal (est.)`;
     APP.toast(`${activity.icon} ${record.name} logged — ${calLabel} burned!`, 'success');
+    this.selectedType = null;
+    this._clearDraft();
     await this.render();
   },
 
@@ -475,6 +477,9 @@ const WORKOUT = {
 
   closePostSave() {
     document.getElementById('postsave-overlay').style.display = 'none';
+    this.selectedType = null;
+    this._clearDraft();
+    this.render();
   },
 
   // ── Exercise Cards (unchanged core) ──────────────────────────────────────────
